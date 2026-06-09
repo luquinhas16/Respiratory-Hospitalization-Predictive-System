@@ -1,12 +1,18 @@
-from . import config
 import pandas as pd
+from pathlib import Path
+from . import config
 
 def joinInmet():
 
     main_df = pd.DataFrame()
 
     for y in config.years:
-        new_df = pd.read_csv(f'{config.raw_old_dir}/INMET/{y}/INMET_S_RS_A801_PORTO ALEGRE - JARDIM BOTANICO_01-01-{y}_A_31-12-{y}.CSV', decimal=',', encoding='latin-1', sep=';')
+        dir = f'{config.raw_old_dir}/INMET/{y}'
+
+        file_name = [f.name for f in Path(dir).iterdir() if f.is_file()]
+        file_name = file_name[0]
+
+        new_df = pd.read_csv(f'{dir}/{file_name}', decimal=',', encoding='latin-1', sep=';')
 
         main_df = pd.concat([main_df, new_df], ignore_index=True)
 
