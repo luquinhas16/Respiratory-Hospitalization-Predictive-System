@@ -1,7 +1,7 @@
 import pandas as pd
-from .. import config
+from src import config
 
-def clean():
+def cleanInmet():
     raw = pd.read_csv(f'{config.raw_data_dir}/inmet.csv', decimal=',', encoding='latin-1')
     raw = raw.drop(columns=["Hora UTC"])
 
@@ -18,4 +18,4 @@ def clean():
         raise
 
 if __name__ == "__main__":
-    clean()
+    pass
