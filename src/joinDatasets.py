@@ -1,5 +1,6 @@
 import pandas as pd
 from pathlib import Path
+from datetime import datetime
 from . import config
 
 def joinInmet():
@@ -41,6 +42,9 @@ def joinSus():
 
     for y in config.years:
         new_df = pd.read_csv(f'{config.raw_old_dir}/SUS/sih_respiratorio_canoas_{y}.csv')
+
+        new_df["DT_INTER"] = pd.to_datetime(new_df["DT_INTER"])
+        new_df = new_df[new_df['DT_INTER'] >= datetime(2020, 1, 1)]
 
         main_df = pd.concat([main_df, new_df], ignore_index=True)
 

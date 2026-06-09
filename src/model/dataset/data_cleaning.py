@@ -15,7 +15,7 @@ def cleanInmet():
 
     dates = list(dict.fromkeys(raw['data'].to_list()))
 
-    for date in tqdm(dates):
+    for date in tqdm(dates, desc="Cleaning INMET data"):
         
         day_df = raw[raw['data'] == date]
         
@@ -47,7 +47,7 @@ def cleanFepam():
     
     dates = list(dict.fromkeys(raw['data'].to_list()))
     
-    for date in tqdm(dates):
+    for date in tqdm(dates, desc="Cleaning FEPAM data"):
         day_df = raw[raw['data'] == date]
         
         cols_avg = day_df.mean(numeric_only=True).to_list()
@@ -61,14 +61,40 @@ def cleanFepam():
     print(dataset)
     
     dataset.to_csv(f'{config.model_dataset_dir}/fepam.csv')
-    
-    raise NotImplementedError
 
 def cleanSus():
+    raw = pd.read_csv(f'{config.raw_data_dir}/sus.csv')
+    raw = raw.rename(columns={"DT_INTER": "data"})
+    
+    dataset = pd.DataFrame(columns=["data","internacoes"])
+    
+    dates = list(dict.fromkeys(raw['data'].to_list()))
+    dates.sort()
+    
+    for date in tqdm(dates, desc="Cleaning SUS data"):
+        count = (raw["data"] == date).sum()
+        
+        dataset.loc[len(dataset)] = [date, count]
+    
+    print(dataset)
+    
+    dataset.to_csv(f'{config.model_dataset_dir}/sus.csv')
+    
+def joinCleanDatasets():
+    inmet = pd.read_csv(f'{config.model_dataset_dir}/inmet.csv')
+    fepam = pd.read_csv(f'{config.model_dataset_dir}/fepam.csv')
+    sus = pd.read_csv(f'{config.model_dataset_dir}/sus.csv')
+    
+    #verificação de datas concordantes
+    
+    full_dataset = pd.concat([inmet, fepam, sus], axis=1)
+    
     raise NotImplementedError
     
 
 if __name__ == "__main__":
-    #cleanInmet()
-    #cleanFepam()
+    cleanInmet()
+    cleanFepam()
     cleanSus()
+    
+    joinCleanDatasets()
