@@ -17,5 +17,14 @@ def cleanInmet():
         print(dataset)
         raise
 
+def cleanFepam():
+    raise NotImplementedError
+
+def cleanSus():
+    raise NotImplementedError
+    
+
 if __name__ == "__main__":
-    pass
+    cleanInmet()
+    cleanFepam()
+    cleanSus()

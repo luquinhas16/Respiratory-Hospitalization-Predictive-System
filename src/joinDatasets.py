@@ -18,6 +18,8 @@ def joinInmet():
 
     main_df = main_df.drop(columns=['Unnamed: 19'])
 
+    main_df.columns = renameInmet()
+
     main_df.to_csv(f'{config.raw_data_dir}/inmet.csv', index=False)
 
 def joinFepam():
@@ -43,6 +45,30 @@ def joinSus():
         main_df = pd.concat([main_df, new_df], ignore_index=True)
 
     main_df.to_csv(f'{config.raw_data_dir}/sus.csv', index=False)
+
+def renameInmet():
+    rename = [
+        "data",
+        "hora",
+        "precipitacao", 
+        "pressao_atm",
+        "pressao_max_hora_ant",
+        "pressao_min_hora_ant",
+        "radiacao",
+        "temperatura_ar",
+        "temperatura_orvalho",
+        "temperatura_max_hora_ant",
+        "temperatura_min_hora_ant",
+        "temperatura_orvalho_max_hora_ant",
+        "temperatura_orvalho_min_hora_ant",
+        "umidade_rel_max_hora_ant",
+        "umidade_rel_min_hora_ant",
+        "umidade_rel",
+        "vento_direcao",
+        "vento_rajada_max",
+        "vento_velocidade"
+    ]
+    return rename
 
 if __name__ == "__main__":
     joinInmet()
