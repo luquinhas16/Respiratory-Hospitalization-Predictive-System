@@ -40,14 +40,12 @@ class TimeSeriesDataset(Dataset):
         return torch.tensor(inputs), torch.tensor(labels)
 
 
-def make_loaders(train_df, val_df, test_df, input_width=7, label_width=1, shift=1, label_columns=['internacoes'], batch_size=32):
+def make_loaders(train_df, test_df, input_width=7, label_width=1, shift=1, label_columns=['internacoes'], batch_size=32):
 
     train_ds = TimeSeriesDataset(train_df, input_width, label_width, shift, label_columns)
-    val_ds = TimeSeriesDataset(val_df, input_width, label_width, shift, label_columns)
     test_ds  = TimeSeriesDataset(test_df,  input_width, label_width, shift, label_columns)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=False)  # ⚠️ shuffle=False for time series
-    val_loader  = DataLoader(val_ds,  batch_size=batch_size, shuffle=False)
     test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False)
 
-    return train_loader, val_loader, test_loader
+    return train_loader, test_loader

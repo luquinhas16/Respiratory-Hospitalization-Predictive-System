@@ -17,13 +17,21 @@ def loadDataset():
 if __name__ == "__main__":
     df = loadDataset()
     df = feature_engineering.featureEng(df)
-    X_train, y_train, X_val, y_val, X_test, y_test = feature_engineering.scaleNsplitData(df)
+    
+    df_hybrid = df.drop(columns=['data', 'Unnamed: 0'])
+    dates = df_hybrid['data']
+    time_limit = '2024-01-01'
+    train_df, test_df = df_hybrid[dates < time_limit], df_hybrid[dates >= time_limit]
+    
+    complete_pipeline = feature_engineering.pipeline(train_df.columns.list())
+    
+    X_train, y_train, X_test, y_test = feature_engineering.scaleNsplitData(df)
     
     train_df = pd.concat([X_train, y_train], axis=1)
-    val_df = pd.concat([X_val,   y_val],   axis=1)
     test_df = pd.concat([X_test, y_test], axis=1)
     
-    train_loader, val_loader, test_loader = dataset_construction.make_loaders(train_df, val_df, test_df)
+    train_dataset = dataset_construction.TimeSeriesDataset(train_df, input_width=14, label_width=1, shift=1, label_columns=['internacoes'])
+    train_loader, test_loader = dataset_construction.make_loaders(train_df, test_df)
         
     # Infer input_size from the loader
     inputs, labels = next(iter(train_loader))
@@ -40,7 +48,14 @@ if __name__ == "__main__":
 
     model = LSTMModel(input_size=hyperparameters['input_size'], hidden_size=hyperparameters['hidden_size'], num_layers=hyperparameters['num_layers'], output_size=hyperparameters['output_size'], label_width=hyperparameters['label_width'], dropout=hyperparameters['dropout'])
 
-    model, history = train(model, train_loader, val_loader, hyperparameters, device=device)
+    model, cv_history, final_history = train(
+        model,
+        dataset=train_dataset,
+        hyperparameters=hyperparameters,
+        n_splits=5,
+        epochs=50,
+        device=device
+    )
     
-    result = evaluate(model, test_loader, criterion = nn.MSELoss(), device=device)
-    print(result)
+    #result = evaluate(model, test_loader, criterion = nn.MSELoss(), device=device)
+    #print(result)

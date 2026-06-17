@@ -1,74 +1,131 @@
 import torch
-import torch.nn as nn
 import numpy as np
+import torch.nn as nn
+from torchmetrics.functional import r2_score
+from torch.utils.data import DataLoader, Subset
+from sklearn.model_selection import TimeSeriesSplit
 
-def train(model, train_loader, val_loader, hyperparameters, epochs=50, lr=1e-3, patience=10, device='cpu'):
+def train(model, dataset, hyperparameters, n_splits=5, epochs=50, lr=1e-3, patience=10, device='cpu'):
     model = model.to(device)
+    criterion = nn.MSELoss()
+    batch_size = hyperparameters.get('batch_size', 32)
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    cv_history = []
 
+    print(f"Starting {n_splits}-fold time series cross-validation...\n")
+
+    for fold, (train_idx, val_idx) in enumerate(tscv.split(dataset)):
+        print(f"{'─'*55}")
+        print(f"Fold {fold+1}/{n_splits} | train: {len(train_idx)} samples | val: {len(val_idx)} samples")
+        print(f"{'─'*55}")
+
+        train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size, shuffle=False)
+        val_loader   = DataLoader(Subset(dataset, val_idx),   batch_size=batch_size, shuffle=False)
+
+        model.apply(reset_weights)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=5
+        )
+
+        fold_history = {'train_loss': [], 'val_mse': [], 'val_mae': [], 'val_rmse': [], 'val_r2': []}
+        best_val_loss = np.inf
+        best_model_state = None
+        epochs_without_improvement = 0
+
+        for epoch in range(epochs):
+            model.train()
+            train_losses = []
+
+            for inputs, labels in train_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                optimizer.zero_grad()
+                loss = criterion(model(inputs), labels)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+                train_losses.append(loss.item())
+
+            train_loss = np.mean(train_losses)
+            metrics    = evaluate(model, val_loader, device)
+            val_loss   = metrics['mse']
+
+            scheduler.step(val_loss)
+            fold_history['train_loss'].append(train_loss)
+            fold_history['val_mse'].append(metrics['mse'])
+            fold_history['val_mae'].append(metrics['mae'])
+            fold_history['val_rmse'].append(metrics['rmse'])
+            fold_history['val_r2'].append(metrics['r2'])
+
+            print(f"  Epoch {epoch+1:3d}/{epochs} | train_loss: {train_loss:.4f} | val_MSE: {metrics['mse']:.4f} | val_MAE: {metrics['mae']:.4f}")
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_model_state = model.state_dict().copy()
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+                if epochs_without_improvement >= patience:
+                    print(f"\n  Early stopping at epoch {epoch+1} — best val_MSE: {best_val_loss:.4f}")
+                    break
+
+        cv_history.append(fold_history)
+
+    # ── Generalization summary ────────────────────────────────────────────────
+    fold_mse  = [np.min(h['val_mse']) for h in cv_history]   # best MSE per fold
+    fold_mae  = [np.min(h['val_mae']) for h in cv_history]   # best MAE per fold
+
+    print(f"\n{'='*55}")
+    print(f"Cross-Validation Generalization Summary")
+    print(f"{'='*55}")
+    print(f"{'Fold':<8} {'Best MSE':>10} {'Best MAE':>10}")
+    print(f"{'─'*30}")
+    for i, (mse, mae) in enumerate(zip(fold_mse, fold_mae)):
+        print(f"  {i+1:<6} {mse:>10.4f} {mae:>10.4f}")
+    print(f"{'─'*30}")
+    print(f"  {'Mean':<6} {np.mean(fold_mse):>10.4f} {np.mean(fold_mae):>10.4f}")
+    print(f"  {'Std':<6} {np.std(fold_mse):>10.4f} {np.std(fold_mae):>10.4f}")
+    print(f"{'='*55}\n")
+
+    # ── Final training on full dataset ────────────────────────────────────────
+    avg_epochs = int(np.mean([len(h['train_loss']) for h in cv_history]))
+    print(f"Training final model on full dataset for {avg_epochs} epochs...\n")
+
+    full_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    model.apply(reset_weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.MSELoss()                          # good default for regression
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=5
-    )                                                 # halves lr if val loss plateaus
 
-    history = {'train_loss': [], 'val_loss': []}
-
-    best_val_loss = np.inf
-    epochs_without_improvement = 0
-    best_model_state = None
-
-    for epoch in range(epochs):
-
-        # ── Training phase ──────────────────────────────────────────────────
+    final_history = {'train_loss': []}
+    for epoch in range(avg_epochs):
         model.train()
         train_losses = []
-
-        for inputs, labels in train_loader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-
+        for inputs, labels in full_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
-            preds = model(inputs)
-            loss  = criterion(preds, labels)
+            loss = criterion(model(inputs), labels)
             loss.backward()
-
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # prevents exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             train_losses.append(loss.item())
-        
         train_loss = np.mean(train_losses)
+        final_history['train_loss'].append(train_loss)
+        print(f"  Epoch {epoch+1:3d}/{avg_epochs} | train_loss: {train_loss:.4f}")
 
-        # ── Validation phase ─────────────────────────────────────────────────
-        val_loss = evaluate(model, val_loader, criterion, device)['loss']
-        
-        scheduler.step(val_loss)
+    return model, cv_history, final_history
 
-        history['train_loss'].append(train_loss)
-        history['val_loss'].append(val_loss)
-        
-        print(f"Epoch {epoch+1:3d}/{epochs} | train_loss: {train_loss:.4f} | val_loss: {val_loss:.4f}")
 
-        # ── Early stopping ───────────────────────────────────────────────────
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_model_state = model.state_dict().copy()
-            epochs_without_improvement = 0
-        else:
-            epochs_without_improvement += 1
-            if epochs_without_improvement >= patience:
-                print(f"\nEarly stopping at epoch {epoch+1} — best val_loss: {best_val_loss:.4f}")
-                break
+def reset_weights(layer):
+    """Resets layer weights to avoid leaking information between folds."""
+    if hasattr(layer, 'reset_parameters'):
+        layer.reset_parameters()
 
-    # Restore best weights before returning
-    model.load_state_dict(best_model_state)
-    return model, history
-
-def evaluate(model, loader, criterion, device):
+def evaluate(model, loader, device):
     model.eval()
     losses = []
     all_preds = []
     all_labels = []
 
+    criterion = nn.MSELoss()
     with torch.no_grad():
         for inputs, labels in loader:
             inputs = inputs.to(device)
@@ -84,9 +141,15 @@ def evaluate(model, loader, criterion, device):
 
     mse = nn.MSELoss()(all_preds, all_labels).item()
     mae = nn.L1Loss()(all_preds, all_labels).item()
-    loss   = np.mean(losses)
+    rmse = np.sqrt(mse)
+    loss = np.mean(losses)
     
-    return {'loss': loss, 'mse': mse, 'mae': mae}
+    preds_flat = all_preds.view(-1)
+    labels_flat = all_labels.view(-1)
+    
+    r2 = r2_score(preds_flat, labels_flat).item()
+    
+    return {'loss': loss, 'mse': mse, 'mae': mae, 'rmse': rmse, 'r2': r2}
 
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size, label_width, dropout=0.2):
