@@ -1,39 +1,49 @@
 import torch
 import numpy as np
+import pandas as pd
 import torch.nn as nn
 from torchmetrics.functional import r2_score
 from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import TimeSeriesSplit
+from dataset.dataset_construction import TimeSeriesDataset
 
-def train(model, dataset, hyperparameters, n_splits=5, epochs=50, lr=1e-3, patience=10, device='cpu'):
-    model = model.to(device)
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+def crossValidate(X, y, hyperparameters, preprocessor, train_params, n_splits=5, patience=10):
     criterion = nn.MSELoss()
-    batch_size = hyperparameters.get('batch_size', 32)
     tscv = TimeSeriesSplit(n_splits=n_splits)
+    
     cv_history = []
 
-    print(f"Starting {n_splits}-fold time series cross-validation...\n")
+    for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+        
+        X_train_fold = X.iloc[train_idx]
+        y_train_fold = y.iloc[train_idx]
+        X_val_fold = X.iloc[val_idx]
+        y_val_fold = y.iloc[val_idx]
+        
+        train_loader, val_loader = preprocessFold(preprocessor, train_params['batch_size'], X_train_fold, y_train_fold, X_val_fold, y_val_fold)
 
-    for fold, (train_idx, val_idx) in enumerate(tscv.split(dataset)):
-        print(f"{'─'*55}")
-        print(f"Fold {fold+1}/{n_splits} | train: {len(train_idx)} samples | val: {len(val_idx)} samples")
-        print(f"{'─'*55}")
-
-        train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size, shuffle=False)
-        val_loader   = DataLoader(Subset(dataset, val_idx),   batch_size=batch_size, shuffle=False)
-
-        model.apply(reset_weights)
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        model = LSTMModel(
+            input_size=hyperparameters['input_size'],
+            hidden_size=hyperparameters['hidden_size'],
+            num_layers=hyperparameters['num_layers'],
+            output_size=hyperparameters['output_size'],
+            label_width=hyperparameters['label_width'],
+            dropout=hyperparameters['dropout']
+        )
+        model = model.to(device)
+        
+        optimizer = torch.optim.Adam(model.parameters(), lr=train_params['lr'])
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5
         )
 
         fold_history = {'train_loss': [], 'val_mse': [], 'val_mae': [], 'val_rmse': [], 'val_r2': []}
         best_val_loss = np.inf
-        best_model_state = None
         epochs_without_improvement = 0
 
-        for epoch in range(epochs):
+        for epoch in range(train_params['epochs']):
             model.train()
             train_losses = []
 
@@ -57,67 +67,65 @@ def train(model, dataset, hyperparameters, n_splits=5, epochs=50, lr=1e-3, patie
             fold_history['val_rmse'].append(metrics['rmse'])
             fold_history['val_r2'].append(metrics['r2'])
 
-            print(f"  Epoch {epoch+1:3d}/{epochs} | train_loss: {train_loss:.4f} | val_MSE: {metrics['mse']:.4f} | val_MAE: {metrics['mae']:.4f}")
-
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                best_model_state = model.state_dict().copy()
                 epochs_without_improvement = 0
             else:
                 epochs_without_improvement += 1
                 if epochs_without_improvement >= patience:
-                    print(f"\n  Early stopping at epoch {epoch+1} — best val_MSE: {best_val_loss:.4f}")
                     break
 
         cv_history.append(fold_history)
 
-    # ── Generalization summary ────────────────────────────────────────────────
-    fold_mse  = [np.min(h['val_mse']) for h in cv_history]   # best MSE per fold
-    fold_mae  = [np.min(h['val_mae']) for h in cv_history]   # best MAE per fold
+    return cv_history
 
-    print(f"\n{'='*55}")
-    print(f"Cross-Validation Generalization Summary")
-    print(f"{'='*55}")
-    print(f"{'Fold':<8} {'Best MSE':>10} {'Best MAE':>10}")
-    print(f"{'─'*30}")
-    for i, (mse, mae) in enumerate(zip(fold_mse, fold_mae)):
-        print(f"  {i+1:<6} {mse:>10.4f} {mae:>10.4f}")
-    print(f"{'─'*30}")
-    print(f"  {'Mean':<6} {np.mean(fold_mse):>10.4f} {np.mean(fold_mae):>10.4f}")
-    print(f"  {'Std':<6} {np.std(fold_mse):>10.4f} {np.std(fold_mae):>10.4f}")
-    print(f"{'='*55}\n")
 
-    # ── Final training on full dataset ────────────────────────────────────────
-    avg_epochs = int(np.mean([len(h['train_loss']) for h in cv_history]))
-    print(f"Training final model on full dataset for {avg_epochs} epochs...\n")
+def preprocessFold(preprocessor, batch_size, X_train, y_train, X_val, y_val):
+    
+    X_train_processed = preprocessor.fit_transform(X_train)
+    X_val_processed  = preprocessor.transform(X_val)
+    
+    X_train_processed = X_train_processed.dropna()
+    y_train = y_train.loc[X_train_processed.index]
 
-    full_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    model.apply(reset_weights)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    X_val_processed = X_val_processed.dropna()
+    y_val = y_val.loc[X_val_processed.index]
 
-    final_history = {'train_loss': []}
-    for epoch in range(avg_epochs):
+    train_df = pd.concat([X_train_processed, y_train], axis=1)
+    val_df  = pd.concat([X_val_processed,  y_val],  axis=1)
+
+    train_dataset = TimeSeriesDataset(train_df, input_width=7, label_width=1, shift=1, label_columns=['internacoes'])
+    val_dataset = TimeSeriesDataset(val_df, input_width=7, label_width=1, shift=1, label_columns=['internacoes'])
+    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+    val_loader   = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False)
+    
+    return train_loader, val_loader
+
+
+def train(model, train_loader, hyperparameters):
+    optimizer = torch.optim.Adam(model.parameters(), lr=hyperparameters['lr'])
+    criterion = nn.MSELoss()
+
+    history = {'train_loss': []}
+    for epoch in range(hyperparameters['epochs']):
         model.train()
         train_losses = []
-        for inputs, labels in full_loader:
+        
+        for inputs, labels in train_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             loss = criterion(model(inputs), labels)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             train_losses.append(loss.item())
+            
         train_loss = np.mean(train_losses)
-        final_history['train_loss'].append(train_loss)
-        print(f"  Epoch {epoch+1:3d}/{avg_epochs} | train_loss: {train_loss:.4f}")
+        history['train_loss'].append(train_loss)
 
-    return model, cv_history, final_history
+    return model, history
 
-
-def reset_weights(layer):
-    """Resets layer weights to avoid leaking information between folds."""
-    if hasattr(layer, 'reset_parameters'):
-        layer.reset_parameters()
 
 def evaluate(model, loader, device):
     model.eval()

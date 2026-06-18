@@ -29,7 +29,7 @@ def featureEng(df):
 
 def createSplit(df):
     X = df.drop(columns=['internacoes', 'data', 'Unnamed: 0',
-                            'pm10_min', 'so2_min', 'no2_min', 'o3_min', 'co_min', 'pm10_max', 'so2_max', 'no2_max', 'o3_max', 'co_max'])
+                            'pm10_min', 'so2_min', 'no2_min', 'o3_min', 'co_min', 'pm10_max', 'so2_max', 'no2_max', 'o3_max', 'co_max', 'co'])
     y = df['internacoes']
     datas = df['data'] # Guardamos as datas para depois
 
@@ -104,7 +104,7 @@ def createPreprocessingPipeline(train_columns):
     return pipeline
 
 
-def gerador_de_lags(df_out, features_para_lag=None, n_lags=3):
+def gerador_de_lags(df_out, features_para_lag=None, n_lags=3):    
     # ← Handle numpy arrays passed by sklearn pipeline
     if isinstance(df_out, np.ndarray):
         raise ValueError(
