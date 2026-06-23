@@ -8,6 +8,7 @@ def cleanInmet():
     cols_to_remove = ["hora", "pressao_max_hora_ant", "pressao_min_hora_ant", "temperatura_orvalho_max_hora_ant", "temperatura_orvalho_min_hora_ant", "umidade_rel_max_hora_ant", "umidade_rel_min_hora_ant"]
 
     raw = raw.drop(columns=cols_to_remove)
+
     raw["data"] = pd.to_datetime(raw["data"])
     
     clean_cols = raw.columns.to_list() + ["temperatura_min", "temperatura_max"]
