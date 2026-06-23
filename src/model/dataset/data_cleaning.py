@@ -8,6 +8,8 @@ def cleanInmet():
     cols_to_remove = ["hora", "pressao_max_hora_ant", "pressao_min_hora_ant", "temperatura_orvalho_max_hora_ant", "temperatura_orvalho_min_hora_ant", "umidade_rel_max_hora_ant", "umidade_rel_min_hora_ant"]
 
     raw = raw.drop(columns=cols_to_remove)
+
+    raw["data"] = pd.to_datetime(raw["data"])
     
     clean_cols = raw.columns.to_list() + ["temperatura_min", "temperatura_max"]
     
@@ -30,7 +32,7 @@ def cleanInmet():
     dataset = dataset.drop(columns=["temperatura_max_hora_ant", "temperatura_min_hora_ant"])
     print(dataset)
     
-    dataset.to_csv(f'{config.model_dataset_dir}/inmet.csv')
+    dataset.to_csv(f'{config.model_dataset_dir}/inmet.csv', index=False)
 
 def cleanFepam():
     raw = pd.read_csv(f'{config.raw_data_dir}/fepam.csv')
@@ -60,16 +62,16 @@ def cleanFepam():
     
     print(dataset)
     
-    dataset.to_csv(f'{config.model_dataset_dir}/fepam.csv')
+    dataset.to_csv(f'{config.model_dataset_dir}/fepam.csv', index=False)
 
 def cleanSus():
     raw = pd.read_csv(f'{config.raw_data_dir}/sus.csv')
     raw = raw.rename(columns={"DT_INTER": "data"})
+    raw['data'] = pd.to_datetime(raw['data'])
     
     dataset = pd.DataFrame(columns=["data","internacoes"])
     
-    dates = list(dict.fromkeys(raw['data'].to_list()))
-    dates.sort()
+    dates = pd.date_range(start='2020-01-01', end='2024-12-31', freq='D').to_list()
     
     for date in tqdm(dates, desc="Cleaning SUS data"):
         count = (raw["data"] == date).sum()
@@ -78,7 +80,7 @@ def cleanSus():
     
     print(dataset)
     
-    dataset.to_csv(f'{config.model_dataset_dir}/sus.csv')
+    dataset.to_csv(f'{config.model_dataset_dir}/sus.csv', index=False)
     
 def joinCleanDatasets():
     inmet = pd.read_csv(f'{config.model_dataset_dir}/inmet.csv')
@@ -87,9 +89,12 @@ def joinCleanDatasets():
     
     #verificação de datas concordantes
     
-    full_dataset = pd.concat([inmet, fepam, sus], axis=1)
+    full_dataset = pd.merge(inmet, fepam, on='data', how='inner')
+    full_dataset = pd.merge(full_dataset, sus, on='data', how='inner')
     
-    raise NotImplementedError
+    print(full_dataset)
+    
+    full_dataset.to_csv(f'{config.model_dataset_dir}/dataset.csv')
     
 
 if __name__ == "__main__":
