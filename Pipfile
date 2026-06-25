@@ -1,0 +1,22 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pandas = "*"
+seaborn = "*"
+altair = "*"
+streamlit = "*"
+matplotlib = "*"
+ipykernel = "*"
+scikit-learn = "*"
+torchmetrics = "*"
+torch = "*"
+tqdm = "*"
+optuna = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.14"
