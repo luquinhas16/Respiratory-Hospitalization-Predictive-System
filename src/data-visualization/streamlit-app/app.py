@@ -11,9 +11,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Adiciona o diretório atual e o diretório pai ao sys.path para poder importar datacleaning e os tabs
+# Adiciona o diretório atual, o diretório pai e o diretório raiz ao sys.path para poder importar datacleaning, os tabs e de src
 sys.path.append(str(Path(__file__).parent))
 sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent.parent))
+
 
 try:
     import datacleaning
@@ -134,6 +136,6 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 render_tab_geral(tab1, df_agg_filtered, meteorology_choice, pollution_choice, window_size, WEATHER_VARS, POLLUTION_VARS)
 render_tab_clima(tab2, df_agg_filtered)
 render_tab_demografia(tab3, df_sus_filtered)
-render_tab_previsoes(tab4)
+render_tab_previsoes(tab4, start_date, end_date, window_size)
 render_tab_base(tab5, df_agg_filtered)
 render_tab_infos(tab6)

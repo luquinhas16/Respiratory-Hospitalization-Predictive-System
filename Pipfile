@@ -10,6 +10,11 @@ altair = "*"
 streamlit = "*"
 matplotlib = "*"
 ipykernel = "*"
+scikit-learn = "*"
+torchmetrics = "*"
+torch = "*"
+tqdm = "*"
+optuna = "*"
 
 [dev-packages]
 
