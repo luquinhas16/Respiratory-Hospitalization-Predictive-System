@@ -139,7 +139,7 @@ def render_tab_clima(tab, df_agg_filtered):
         with col_heat:
             st.subheader("🌡️ Matriz de Correlação Geral")
             
-            corr_data = df_agg_filtered[CORR_COLS].dropna().corr()
+            corr_data = df_agg_filtered[CORR_COLS].corr()
             # Renomeia colunas e linhas
             corr_data = corr_data.rename(columns=FRIENDLY_NAMES, index=FRIENDLY_NAMES)
             

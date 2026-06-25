@@ -13,8 +13,16 @@ import feature_engineering
 from model import LSTMModel, train, evaluate, preprocessFold, device
 from dataset.dataset_construction import TimeSeriesDataset
 
+def set_seed(seed=42):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 def run_training():
     print(f"Using device: {device}")
+    set_seed(42)
     
     # 1. Load dataset
     data_path = Path(__file__).parent / "dataset" / "dataset.csv"
@@ -60,21 +68,21 @@ def run_training():
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=False)
     
     # 7. Initialize model with best hyperparameters from Optuna
-    n_features = train_df.shape[1]
+    n_features = train_df.shape[1] - 1
     print(f"Number of input features: {n_features}")
     
     hyperparameters = {
         'input_size': n_features,
-        'hidden_size': 256,
+        'hidden_size': 64,
         'num_layers': 2,
         'output_size': 1,
         'label_width': 1,
-        'dropout': 0.4
+        'dropout': 0.1
     }
     
     train_params = {
-        'lr': 0.000307,
-        'epochs': 30
+        'lr': 0.001,
+        'epochs': 45
     }
     
     model = LSTMModel(
